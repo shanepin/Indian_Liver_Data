@@ -1,1 +1,1 @@
-# homework-0
+# Choose Your Own Project for Edx Capstone Project

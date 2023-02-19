@@ -1,1 +1,2 @@
-# Choose Your Own Project for Edx Capstone Project
+# Edx Capstone Project for Harvardx Data Science Professional Certificate
+

@@ -5,6 +5,11 @@ library(caret)
 
 # Load data set ###############################################################
 
+# Clone the following github repo for getting the data set file:
+# https://github.com/eunice-n/edx_Capstone_Proj2.git
+
+# BEFORE running the below codes
+# Set the working directory to the location of the local repo
 wd <- getwd()
 file <- "indian_liver_patient.csv"
 patients <- read.csv(paste(wd, file, sep = "/"))

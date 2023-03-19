@@ -1,30 +1,630 @@
 ---
-title: "Edx Capstone Project 2"
+title: "Liver Disease Patient Classification with Indian Liver Patient Records"
 author: "Eunice Ngai"
 date: "`r Sys.Date()`"
-output: html_document
+output:
+  pdf_document: default
+  html_document:
+    number_sections: yes
+editor_options:
+  markdown:
+    wrap: 72
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+# Install Required Packages
+if (!require(tidyverse)){
+  install.packages("tidyverse")
+  library(tidyverse)
+}else{
+  library(tidyverse)
+}
+
+if (!require(reshape2)){
+  install.packages("reshape2")
+  library(reshape2)
+}else{
+  library(reshape2)
+}
+
+if (!require(caret)){
+  install.packages("caret")
+  library(caret)
+}else{
+  library(caret)
+  }
 ```
 
-## R Markdown
+# Introduction
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+*describes the dataset and variables, and summarizes the goal of the
+project and key steps that were performed.* The Indian Liver Patient
+Records contains the records of 583 patients in India. 416 of these
+patients have liver disease and 167 of them are without liver disease.
+In this project, machine learning algorithms will be used to train
+models to identify liver disease patients using the same set of test
+results.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+Data Set Variables: Age: Age of the patient, ranging from 4 to over 90
+Gender: Gender of the patient Total_Bilirubin: Total Bilirubin (direct
+and indirect) level in blood Direct_Bilirubin: Direct Bilirubin level in
+blood Alkaline_Phosphotase: Alamine_Aminotransferase:
+Aspartate_Aminotransferase: Total_Protiens: Albumin:
+Albumin_and_Globulin Ratio: Dataset: label for patient with liver
+disease, or no disease
 
-```{r cars}
-summary(cars)
+# Analysis
+
+## Exploratory Analysis
+
+By examining the summary of the data set, there are 583 records in total
+with 4 NA values in `Albumin_and_Globulin_Ratio`.
+
+```{r Load Dataset, cache=TRUE}
+wd <- getwd()
+file <- "indian_liver_patient.csv"
+patients <- read.csv(paste(wd, file, sep = "/"))
+
+# Summary of data set
+summary(patients)
 ```
 
-## Including Plots
+### Exploring Outliers
 
-You can also embed plots, for example:
+There are some extreme outliers in `Alkaline_Phosphotase`,
+`Alamine_Aminotransferase`, and `Aspartate_Aminotransferase`. 
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+Below shows the patients with highest levels of `Alkaline_Phosphotase`, `Alamine_Aminotransferase`, and `Aspartate_Aminotransferase` respectively.
+
+```{r Exploring Outliers, echo=FALSE}
+rowNum <- c(which.max(patients$Alkaline_Phosphotase),
+            which.max(patients$Alamine_Aminotransferase),
+            which.max(patients$Aspartate_Aminotransferase))
+patients[rowNum,]
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+Below shows the top 10 patients with highest levels of `Alkaline_Phosphotase`.
+```{r Top 10 Patients with Highest Alkaline_Phosphotase, echo=FALSE}
+patients %>% 
+  arrange(desc(Alkaline_Phosphotase)) %>%
+  head(10)
+```
+
+Below shows the top 10 patients with highest levels of `Alamine_Aminotransferase`.
+```{r Top 10 Patients with Highest Alamine_Aminotransferase, echo=FALSE}
+patients %>% 
+  arrange(desc(Alamine_Aminotransferase)) %>%
+  head(10)
+```
+
+Below shows the top 10 patients with highest levels of `Aspartate_Aminotransferase`.
+```{r Top 10 Patients with Highest Aspartate_Aminotransferase, echo=FALSE}
+patients %>% 
+  arrange(desc(Aspartate_Aminotransferase)) %>%
+  head(10)
+```
+
+Patients with extreme values of `Alkaline_Phosphotase`, `Alamine_Aminotransferase`, and `Aspartate_Aminotransferase` are all liver disease patients. Also the table listing top 10 patients with highest levels of `Alkaline_Phosphotase`, `Alamine_Aminotransferase`, and `Aspartate_Aminotransferase` shows that there is a gradual change in the levels, hence the extreme outlier was not caused by an occasional typo or other random error. It is decided to keep these observations to train our model. 
+
+
+### Correlation Between Attributes
+
+Some attributes are highly correlated with other attibutes.
+
+```{r, echo=FALSE}
+round(cor(patients[sapply(patients, is.numeric)]),3) %>%
+  melt() %>%
+  ggplot(aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  labs(
+    title = "Correlation Between Attributes"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 90)
+  )
+```
+
+### Converting `Gender` and `Dataset` Columns into Factors
+
+The columns `Gender`, `Dataset` can be converted into factors, the
+entries in these two columns are catagorical: - `Gender`:
+`r unique(patients$Dataset)` and - `Dataset`:
+`r unique(patients$Dataset)`.
+
+Before converting these columns into factors, data set description was
+checked to identify which category (1 or 2) belongs to the patients with
+liver disease. According to the description, the data set contains 416
+liver patient records and 167 non liver patient records. The data set
+has 416 records labelled as 1 and 167 records labelled as 2.
+
+```{r}
+# 416 records numbered as 1 and 167 records numbered as 2.
+summary(as.factor(patients$Dataset))
+```
+
+Therefore, the label 2 was replaced by 0 to indicate these patients had
+no liver disease. The final data set has 416 records numbered as 1 and
+167 records numbered as 0 in the `Dataset` column.
+
+```{r Converting Dataset Column into 1 and 0}
+
+# replace 2 in Dataset column by 0.
+patients$Dataset[patients$Dataset == 2] <- 0
+
+# Show final Dataset column
+summary(as.factor(patients$Dataset))
+```
+
+The `Gender` column originally contained `Male` and `Female` entries.
+
+```{r}
+# 142 Female patients and 441 Male patients.
+summary(as.factor(patients$Gender))
+```
+
+These entries will also be converted into 1 and 0, with 1 representing
+`Male` patients and 0 representing `Female` patients.
+
+```{r Converting Gender Column into catagorical 1 and 0}
+# replace Male with 1 and Female with 0
+patients$Gender[patients$Gender == "Female"] <- 0
+patients$Gender[patients$Gender == "Male"] <- 1
+
+# converting into numeric variables
+patients$Gender <- as.numeric(patients$Gender)
+
+# Show final Gender column
+summary(as.factor(patients$Gender))
+```
+
+### Handling `NA` Values
+
+There are only 4 `NA` values in `Albumin_and_Globulin_Ratio` column.
+
+```{r NA values summary}
+summary(is.na(patients))
+```
+
+NA values in the data set comprised of less than 1% of all the data.
+Also, as medical data varies among individuals with different health
+conditions, age and gender, therefore the rows with NA values were
+dropped instead of replacing by mean or other estimated statistics from
+the data set.
+
+```{r NA percentage}
+sum(is.na(patients))/nrow(patients)
+```
+
+```{r drop na}
+patients <- patients %>%
+  drop_na()
+summary(is.na(patients))
+```
+
+## Scaling the Variables
+
+The means and standard deviations of each attribute. They all have
+different mean and standard deviation, the entries need re-scaling.
+
+```{r Column Mean}
+Attribute_SD <- sapply(patients[!names(patients) %in% c("Gender", "Dataset")], sd)
+Attribute_Mean <- sapply(patients[!names(patients) %in% c("Gender", "Dataset")], mean)
+rbind(Attribute_Mean, Attribute_SD)
+```
+
+To choose the method of re-scaling, explore the distribution of each
+attribute. Some attributes such as Age, Albumin,
+Albumin_and_Globulin_Ratio and Total_Protiens have approximately normal
+distribution. However, the other features all have extreme outliers.
+
+```{r Density Plots, echo=FALSE}
+
+patients %>%
+  select(-c("Gender", "Dataset")) %>%
+  pivot_longer(names(.)) %>% 
+  ggplot(aes(x = value)) +
+  geom_density() +
+  facet_wrap(~name, scales = "free")
+
+```
+
+To look at the presence of outliers in the features, the boxplot of the
+data was studied. As there are outliers in our data, standardization or
+z-score normalization is used.
+
+```{r Boxplot of Attributes (Before Standardization), echo=FALSE, warning=FALSE, message=FALSE}
+
+patients %>%
+  select(-c("Gender", "Dataset")) %>%
+  melt() %>%
+  ggplot() +
+  geom_boxplot(aes(x = variable, y = value)) +
+  labs(
+    title = "Boxplot of Attributes (Before Standardization)"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 90)
+  )
+```
+
+To standardize the features, each data is subtracted by the mean of that
+column and then divided by the standard deviation of that column. 
+$$X_{std} = \frac{X-\bar X}{\sigma_X}$$
+
+```{r Standardize Patients Data Set}
+# Create function for standardization
+standardize = function(x){
+  z <- (x - mean(x)) / sd(x)
+  return( z)
+}
+
+# Standardize features except gender and dataset, which are factors.
+patients_std <- patients
+
+patients_std[!names(patients_std) %in% c("Gender", "Dataset")] <- apply(patients_std[!names(patients_std) %in% c("Gender", "Dataset")], 2, standardize)
+
+patients_std <- as.data.frame(patients_std)  # Convert back into dataframe
+```
+
+The boxplot of the data set after standardization. The attributes all
+have mean equal zero.
+
+```{r Boxplot of Attributes (After Standardization), echo=FALSE, warning=FALSE, message=FALSE}
+patients_std %>%
+  select(-c("Gender", "Dataset")) %>%
+  melt() %>%
+  ggplot() +
+  geom_boxplot(aes(x = variable, y = value)) +
+  labs(
+    title = "Boxplot of Attributes (After Standardization)"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 90)
+  )
+```
+
+## Model Training
+
+### Creating Train Set and Test Set
+
+The standardized data set is split into testing set, which contains 10%
+of all data, and the training set will have 90% of the data.
+
+```{r Splitting Data Set into Testing and Training Set, warning=FALSE}
+set.seed(53, sample.kind = "Rounding")
+
+test_index <- createDataPartition(patients_std$Dataset, times = 1, p = 0.1, list = FALSE)
+
+test_att <- patients_std[test_index,] %>% select(-"Dataset")  # Attributes for test set
+test_dis <- patients_std[test_index,] %>% select("Dataset")   # Disease indicator for test set
+
+train_att <- patients_std[-test_index,] %>% select(-"Dataset")  # Attributes for train set
+train_dis <- patients_std[-test_index,] %>% select("Dataset")   # Disease indicator for train set
+
+# Convert prediction result as factor
+test_dis <- as.factor(test_dis$Dataset)
+train_dis <- as.factor(train_dis$Dataset)
+```
+
+Confirm the proportion of patients in test and train sets are similar.
+
+```{r Checking proportion of patients in test and train set}
+tibble(
+  "Patients Proportion in Train Set" = mean(as.numeric(train_dis) == 2),
+  "Patients Proportion in Test Set" = mean(as.numeric(test_dis) == 2),
+  )
+```
+
+### Logistic Regression Model (Full Set of Attributes)
+
+Using logistic regression model to predict the liver disease in patients, a confusion matrix is computed to illustartate the performance of the model.
+
+```{r Logistic Regression: All features, warning=FALSE}
+
+set.seed(63, sample.kind = "Rounding") # if using R 3.6 or later
+
+ctrl <- trainControl(method = "cv", number = 5)  # train control features
+
+train_glm <- train(train_att, train_dis, method = "glm", trControl = ctrl)
+glm_preds_f <- predict(train_glm, test_att)
+
+cfm_glm <- confusionMatrix(data = glm_preds_f, reference = test_dis)  # confusion matrix comparing predicted results with actual results
+
+cfm_glm
+```
+
+A summary table with accuracies obtained from different models is created for ease of comparison.
+```{r Create Table for Storing Full Attribute Results}
+
+if(!exists("result_summary")){
+  result_summary <- tibble("Model" = "Logistic Regression (Full attributes)", 
+                           "Accuracy" = mean(glm_preds_f == test_dis))
+}else{
+  result_summary <- rbind(result_summary, 
+                          c("Logistic Regression (Full attributes)", 
+                            mean(glm_preds_f == test_dis)))
+}
+
+result_summary
+```
+
+The coefficients of the logistic regression model and their significance were examined. From the coefficients of the logistic regression model, features such as
+`gender` and `Total_Bilirubin` are less significant, they have a p-value of
+over 0.8.
+
+```{r Summary of glm result with all attributes}
+summary(train_glm)
+```
+
+### Logistic Regression Model (Reduced Set of Attributes)
+
+Another logistic regression model is trained with `gender` and
+`Total_Bilirubin` removed. The accuracy remain unchanged.
+the features.
+
+```{r Logistic Regression: Reduced Attributes, warning=FALSE}
+set.seed(63, sample.kind = "Rounding") # if using R 3.6 or later
+
+# Remove gender and total_bilirubin columns in train set
+train_att_reduced <- train_att %>%
+  select(-c("Gender", "Total_Bilirubin"))
+
+# Remove gener and total_bilirubin columns in test set
+test_att_reduced <- test_att %>%
+  select(-c("Gender", "Total_Bilirubin"))
+  
+
+ctrl <- trainControl(method = "cv", number = 5)
+
+train_glm_1 <- train(train_att_reduced, train_dis, method = "glm", trControl = ctrl)
+glm_preds_r <- predict(train_glm_1, test_att)
+
+cfm_glm <- confusionMatrix(data = glm_preds_r, reference = test_dis)
+cfm_glm
+```
+
+
+```{r Add Reduced Attributes Result to Summary Table}
+
+if(!exists("result_summary")){
+  result_summary <- tibble("Model" = "Logistic Regression (Reduced Attributes)", 
+                           "Accuracy" = mean(glm_preds_r == test_dis))
+}else{
+  result_summary <- rbind(result_summary, 
+                          c("Logistic Regression (Reduced Attributes)", 
+                            mean(glm_preds_r == test_dis)))
+}
+
+result_summary
+```
+
+The significance of the coefficients improved. The reduced training and testing sets with reduced attributes will be used for subsequent model training.
+
+```{r Summary of glm result with reduced attributes}
+summary(train_glm_1)
+```
+
+
+### K-Nearest Neighbors Model
+
+The K-nearest neighbor algorithm was used to train the model. The accuracy obtained was higher than that obtained by the logistic regression model. The reduced set of attribute was used in training the model.
+
+```{r KNN Model, warning=FALSE}
+
+set.seed(63, sample.kind = "Rounding")
+
+ctrl <- trainControl(method = "cv", number = 5)
+
+train_knn <- train(train_att_reduced, train_dis, method = "knn",
+                   trControl = ctrl)
+
+knn_preds <- predict(train_knn, test_att)
+
+train_knn$bestTune
+```
+
+The accuracy obtained was higher than the logistic regression model.
+```{r knn confusion Matrix}
+
+cfm_knn <- confusionMatrix(data = knn_preds, reference = test_dis)
+cfm_knn
+```
+
+```{r Add knn Result to Summary Table}
+
+if(!exists("result_summary")){
+  result_summary <- tibble("Model" = "KNN (Reduced Attributes)", 
+                           "Accuracy" = mean(knn_preds == test_dis))
+}else{
+  result_summary <- rbind(result_summary, 
+                          c("KNN (Reduced Attributes)", 
+                            mean(knn_preds == test_dis)))
+}
+
+result_summary
+```
+
+
+### Random Forest Model
+
+The Random Forest was used to train the model. The accuracy obtained was higher than that obtained by the logistic regression model but lower than the KNN model. The reduced set of attribute was used in training the model.
+
+```{r Random Forest Model, warning=FALSE}
+
+set.seed(63, sample.kind = "Rounding")
+
+train_rf <- train(train_att_reduced, train_dis, method = "rf", ntree = 10)
+
+rf_preds <- predict(train_rf, test_att)
+
+cfm_rf <- confusionMatrix(data = rf_preds, reference = test_dis)
+
+cfm_rf
+```
+
+```{r Add RF Result to Summary Table}
+
+if(!exists("result_summary")){
+  result_summary <- tibble("Model" = "Random Forest (Reduced Attributes)", 
+                           "Accuracy" = mean(rf_preds == test_dis))
+}else{
+  result_summary <- rbind(result_summary, 
+                          c("Random Forest (Reduced Attributes)", 
+                            mean(rf_preds == test_dis)))
+}
+
+result_summary
+```
+
+
+### K-means Model
+
+K-means was used to train the model. The accuracy obtained was the lowest among all other models.
+
+```{r k-Means, warning=FALSE}
+#predict function taking in k_means object
+predict_kmeans <- function(x, k) {
+  centers <- k$centers    # extract cluster centers
+  # calculate distance to cluster centers
+  distances <- sapply(1:nrow(x), function(i){
+    apply(centers, 1, function(y) dist(rbind(x[i,], y)))
+  })
+  max.col(-t(distances))  # select cluster with min distance to center
+}
+
+
+#k_means model building
+set.seed(63, sample.kind = "Rounding")
+k <- kmeans(train_att_reduced, centers = 3, nstart = 25)
+kmeans_preds <- ifelse(predict_kmeans(test_att_reduced, k) == 1, "1", "0")
+cfm_kmeans <- confusionMatrix(data = as.factor(kmeans_preds), reference = test_dis)
+
+cfm_kmeans
+```
+
+The result summary table becomes
+```{r Add k-means Result to Summary Table, echo=FALSE}
+
+if(!exists("result_summary")){
+  result_summary <- tibble("Model" = "K-Means (Reduced Attributes)", 
+                           "Accuracy" = mean(kmeans_preds == test_dis))
+}else{
+  result_summary <- rbind(result_summary, 
+                          c("K-Means (Reduced Attributes)", 
+                            mean(kmeans_preds == test_dis)))
+}
+
+result_summary
+```
+
+## Building an Ensemble
+
+An ensemble with all the models trained to explore if a model with higher accuracy could be created.
+
+### Variable Importance in Difference Models
+
+The variable importance of different trained models was examined and found that different models have different variable importance. 
+
+Variable importance of logistic regression (reduced attributes):
+```{r Variable Importance of Logestic Regression (Reduced Attributes), echo = FALSE}
+varImp(train_glm_1)
+```
+
+Variable importance of K-nearest neighbours (reduced Attributes):
+```{r Variable Importance of KNN, echo =FALSE}
+varImp(train_knn)
+```
+
+
+Variable importance of Random Forest (reduced Attributes):
+```{r Variable Importance of Random Forest, echo=FALSE}
+varImp(train_rf)
+```
+
+
+### Accuracy of the Ensemble
+
+The ensemble model takes the prediction of each models, and return the prediction result as `1 (liver disease patient)` , when three or more models predicted the result as `1 (liver disease patinet)`. The threshold of "three or more models" was found by tuning, it was found that this threshold results in the highest accuracy.
+```{r Ensemble}
+en_pred <- ifelse(
+    as.numeric(kmeans_preds == 1)+
+    as.numeric(glm_preds_r == 1)+
+    as.numeric(knn_preds == 1)+
+    as.numeric(rf_preds == 1)
+   > 2,
+  1,0
+)
+
+cfm_en <- confusionMatrix(data = as.factor(en_pred), reference = test_dis)
+
+cfm_en
+```
+The summary table of results becomes:
+
+```{r Add Ensemble Result to Summary Table, echo=FALSE}
+
+if(!exists("result_summary")){
+  result_summary <- tibble("Model" = "Ensemble", 
+                           "Accuracy" = mean(en_pred == test_dis))
+}else{
+  result_summary <- rbind(result_summary, 
+                          c("Ensemble", 
+                            mean(en_pred == test_dis)))
+}
+
+result_summary
+```
+
+
+# Results
+
+It was found that the highest accuracy obtained in the ensemble was still lower than that obtained by Random Forest model. As the same accuracy could be obtained by the Random Forest model alone, it is decided that Random Forest model will be used as the final model, as it can achieve higher level of accuracy.
+
+## Confusion Matrix of Different Models
+The confusion matrix of different models are visualized below for comparion.
+
+```{r Viz Confusion Matrices, echo=FALSE}
+
+layout_matrix <- matrix(c(1:5,0), ncol = 2)  # Create layout matrix with empty Plot 6
+
+layout(layout_matrix)  # Specify Layout
+
+# Plot 1
+fourfoldplot(as.table(cfm_glm),
+             main = "Logistic Regression Model")
+# Plot 2
+fourfoldplot(as.table(cfm_knn),
+             main = "KNN Model")
+# Plot 3
+fourfoldplot(as.table(cfm_rf),
+             main = "Random Forest Model")
+# Plot 4
+fourfoldplot(as.table(cfm_kmeans),
+             main = "K-Means Model")
+# Plot 5
+fourfoldplot(as.table(cfm_en),
+             main = "Ensemble")
+
+```
+
+
+The final model, random forest model obtained an accuracy of `r round(cfm_rf$overall['Accuracy'], digits = 4)`, sensitivity of `r round(cfm_rf$byClass['Sensitivity'], digits = 4)` and specificity of `r round(cfm_rf$byClass['Specificity'], digits = 4)`.
+
+Given that the prevalence of liver disease patients in the test set was high, at around `r round(mean(as.numeric(test_dis) == 2), digits = 4)`, the quality of of the model cannot be judged by the accuracy achieved finally by the model (`r round(cfm_rf$overall['Accuracy'], digits = 4)`) alone. The Cohen's Kappa score of `r round(cfm_rf$overall['Kappa'], digits = 4)`, which indicates that there is a substantial agreement between the actual prevalence and the predicted outcome.
+
+# Conclusion
+
+In this study, machine learning algorithms "Logistic Regression", "K-Nearest Neighbors", "Random Forest" and "K-Means" were used to predict the liver disease  patients. Other algorithms such as XGBoost and Vanilla Neural Networks could be adopted to see if higher accuracy could be achieved. Also, as there are a lot of outliers in the data set, having a larger data set could eliminate the effect of outliers and also improve the model accuracy as there are more training data.
+
+# Reference
+
+Data set source:
+<https://www.kaggle.com/datasets/uciml/indian-liver-patient-records>
+
+Data set description:
+<https://archive.ics.uci.edu/ml/datasets/ILPD+(Indian+Liver+Patient+Dataset)>
+
+Statistic Knowledge:
+<https://www.statology.org/>
